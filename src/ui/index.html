@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Google Ads — Sandbox</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="ads-console.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="gads-topbar">
+      <div class="gads-topbar-left">
+        <div class="gads-logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="24" height="24"><path fill="#FBBC04" d="M12 2L2 19h20L12 2z"/><path fill="#34A853" d="M2 19l5-9 5 9H2z"/><path fill="#4285F4" d="M12 2l5 10H7l5-10z"/><path fill="#EA4335" d="M7 10h10l-5 9-5-9z"/></svg>
+          <span>Google Ads</span>
+        </div>
+        <div class="gads-account-chip" id="accountChip">Loading…</div>
+      </div>
+      <div class="gads-topbar-right">
+        <span class="gads-sandbox-badge">Sandbox</span>
+        <span class="gads-date-range" id="dateRange">Last 30 days</span>
+      </div>
+    </header>
+
+    <div class="gads-shell">
+      <nav class="gads-sidebar">
+        <button class="gads-nav-item active" data-view="overview">Overview</button>
+        <button class="gads-nav-item" data-view="campaigns">Campaigns</button>
+        <button class="gads-nav-item" data-view="pmax">Performance Max</button>
+        <button class="gads-nav-item" data-view="asset-groups">Asset groups</button>
+        <button class="gads-nav-item" data-view="products">Products</button>
+        <button class="gads-nav-item" data-view="changes">Change history</button>
+        <hr class="gads-nav-divider" />
+        <button class="gads-nav-item gads-nav-sub" data-view="api-verify">API verification</button>
+      </nav>
+
+      <main class="gads-main" id="mainContent">
+        <div class="gads-loading">Loading account data…</div>
+      </main>
+    </div>
+  </div>
+
+  <div id="drawer" class="gads-drawer hidden">
+    <div class="gads-drawer-header">
+      <h2 id="drawerTitle">Detail</h2>
+      <button id="drawerClose" aria-label="Close">×</button>
+    </div>
+    <div class="gads-drawer-body" id="drawerBody"></div>
+  </div>
+  <div id="drawerBackdrop" class="gads-drawer-backdrop hidden"></div>
+
+  <script src="ads-console.js" type="module"></script>
+</body>
+</html>

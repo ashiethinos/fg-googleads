@@ -1,0 +1,28 @@
+{
+  "name": "@feedgraph/google-ads-sandbox",
+  "version": "1.0.0",
+  "description": "Internal Google Ads API simulator for FeedGraph development and QA",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc && cp -r src/ui dist/ui",
+    "start": "node dist/index.js",
+    "seed": "tsx src/generator/seed.ts",
+    "reset": "tsx src/generator/seed.ts --reset",
+    "verify:api": "tsx script/verify-google-api.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/cors": "^2.8.18",
+    "@types/express": "^5.0.2",
+    "@types/node": "^22.15.21",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}
