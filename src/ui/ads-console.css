@@ -244,6 +244,36 @@ body {
 
 .gads-table tr.clickable { cursor: pointer; }
 
+.gads-product-thumb {
+  display: block;
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #f1f3f4;
+  border: 1px solid var(--g-border);
+}
+
+.gads-product-thumb--empty {
+  background: linear-gradient(135deg, #e8f0fe 0%, #f1f3f4 100%);
+}
+
+.gads-product-cell {
+  min-width: 180px;
+}
+
+.gads-drawer-product-hero {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.gads-drawer-product-hero .gads-product-thumb {
+  width: 120px;
+  height: 120px;
+  border-radius: 8px;
+}
+
 .gads-link {
   color: var(--g-blue);
   text-decoration: none;

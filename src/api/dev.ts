@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import express, { Router, type Request, type Response } from "express";
 import { config } from "../config.js";
 import { GOOGLE_ADS_API_PATHS, GOOGLE_ADS_DOC_LINKS } from "./google-ads-paths.js";
+import { clearFaultMode, getFaultMode, setFaultMode, type FaultMode } from "./fault-injection.js";
 import { uiApiRouter } from "./ui-api.js";
 import {
   applyCustomLabel,
@@ -547,6 +548,30 @@ devRouter.delete("/products/:productId/labels/:labelId", (req, res) => {
     },
     { productId: prev.id, labelId: req.params.labelId },
   );
+});
+
+const VALID_FAULT_MODES: FaultMode[] = ["none", "auth_failure", "quota_exceeded", "rate_limit", "internal_error"];
+
+devRouter.get("/fault-injection", (_req, res) => {
+  res.json({
+    active: getFaultMode(),
+    available: VALID_FAULT_MODES,
+    description: "POST with { mode } to activate, DELETE to clear.",
+  });
+});
+
+devRouter.post("/fault-injection", (req, res) => {
+  const mode = String(req.body?.mode || "none") as FaultMode;
+  if (!VALID_FAULT_MODES.includes(mode)) {
+    return res.status(400).json({ error: `Unknown fault mode "${mode}". Valid: ${VALID_FAULT_MODES.join(", ")}` });
+  }
+  setFaultMode(mode);
+  res.json({ active: mode, message: mode === "none" ? "Fault injection cleared." : `Fault mode "${mode}" activated.` });
+});
+
+devRouter.delete("/fault-injection", (_req, res) => {
+  clearFaultMode();
+  res.json({ active: "none", message: "Fault injection cleared." });
 });
 
 devRouter.post("/products/:productId/custom-labels", (req, res) => {

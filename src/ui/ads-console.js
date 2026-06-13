@@ -57,13 +57,22 @@ function campaignTable(rows, onClick) {
   </tr>`).join("")}</tbody></table></div>`;
 }
 
+function productThumb(p, size = 40) {
+  const url = (p.imageLink || "").trim();
+  if (!url) {
+    return `<div class="gads-product-thumb gads-product-thumb--empty" style="width:${size}px;height:${size}px"></div>`;
+  }
+  return `<img class="gads-product-thumb" src="${esc(url)}" alt="" width="${size}" height="${size}" loading="lazy" />`;
+}
+
 function productTable(rows) {
   if (!rows.length) return `<div class="gads-empty">No products in this view</div>`;
   return `<div class="gads-table-wrap"><table class="gads-table"><thead><tr>
-    <th>Product</th><th>Item ID</th><th>Status</th><th>Asset group</th>
+    <th></th><th>Product</th><th>Item ID</th><th>Status</th><th>Asset group</th>
     <th>Impr.</th><th>Clicks</th><th>Cost</th><th>Conv.</th><th>Revenue</th><th>ROAS</th>
   </tr></thead><tbody>${rows.map((p) => `<tr class="clickable" data-product="${esc(p.productId)}">
-    <td><a class="gads-link" data-product="${esc(p.productId)}">${esc(p.title)}</a></td>
+    <td>${productThumb(p)}</td>
+    <td class="gads-product-cell"><a class="gads-link" data-product="${esc(p.productId)}">${esc(p.title)}</a></td>
     <td><code>${esc(p.itemId)}</code></td>
     <td>${statusBadge(p.status)}</td>
     <td>${esc(p.assetGroupId || "—")}</td>
@@ -262,6 +271,7 @@ async function openProductDrawer(id) {
   const data = await fetchJson(`${API}/products/${id}`);
   document.getElementById("drawerTitle").textContent = data.product.title;
   document.getElementById("drawerBody").innerHTML = `
+    <div class="gads-drawer-product-hero">${productThumb(data.product, 120)}</div>
     <p><code>${esc(data.product.itemId)}</code></p>
     <div class="gads-kpi-row">
       <div class="gads-kpi"><div class="gads-kpi-label">Cost</div><div>${esc(data.product.spendFormatted)}</div></div>

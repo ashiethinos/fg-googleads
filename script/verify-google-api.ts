@@ -97,6 +97,39 @@ async function main() {
     pass: mutate.status === 200 && Array.isArray((mutate.json as { mutateOperationResponses?: unknown[] })?.mutateOperationResponses),
   });
 
+  // ── Matching-seam contract ────────────────────────────────────────────────
+  // Sandbox emits item IDs as "shop_<customerId>_<n>".
+  // FeedGraph's buildGoogleAdsCatalogIndex() resolves these via the suffix regex
+  // /^shop_\d+_(\d+)$/ — extracting <n> and looking up the catalog entry by suffix.
+  // This check verifies both ends of the contract stay in sync.
+  const seamQ =
+    "SELECT segments.product_item_id FROM shopping_performance_view WHERE segments.date DURING LAST_30_DAYS AND metrics.impressions > 0 ORDER BY metrics.cost_micros DESC LIMIT 5";
+  const seam = await req("POST", `/${V}/customers/${CID}/googleAds:search`, { query: seamQ });
+  const seamResults = (seam.json as { results?: Array<{ segments?: { productItemId?: string } }> })?.results ?? [];
+  const shopPattern = /^shop_\d+_\d+$/;
+  const suffixPattern = /^shop_\d+_(\d+)$/;
+  const allMatchShopFormat = seamResults.length > 0 && seamResults.every((r) => shopPattern.test(r.segments?.productItemId ?? ""));
+  const firstItemId = seamResults[0]?.segments?.productItemId ?? "";
+  const suffixMatch = suffixPattern.exec(firstItemId);
+  const suffixExtractable = !!suffixMatch?.[1];
+  checks.push({
+    name: "matching seam: productItemId has shop_<cid>_<n> format",
+    pass: seam.status === 200 && allMatchShopFormat,
+    detail: `first=${firstItemId}`,
+  });
+  checks.push({
+    name: "matching seam: FeedGraph suffix regex /^shop_\\d+_(\\d+)$/ extracts <n>",
+    pass: suffixExtractable,
+    detail: `suffix=${suffixMatch?.[1]}`,
+  });
+  const expectedPrefix = `shop_${CID}_`;
+  const allHaveCidPrefix = seamResults.every((r) => r.segments?.productItemId?.startsWith(expectedPrefix));
+  checks.push({
+    name: `matching seam: productItemId prefix is shop_${CID}_`,
+    pass: seam.status === 200 && seamResults.length > 0 && allHaveCidPrefix,
+    detail: `expected prefix="${expectedPrefix}"`,
+  });
+
   const badCustomer = await req("POST", `/${V}/customers/9999999999/googleAds:search`, {
     query: "SELECT customer.id FROM customer",
   });

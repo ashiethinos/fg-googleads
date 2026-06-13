@@ -170,6 +170,40 @@ export function listListingGroups(assetGroupId?: string): ListingGroup[] {
   }));
 }
 
+export function getListingGroup(id: string): ListingGroup | null {
+  const row = getDb().prepare("SELECT * FROM listing_groups WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+  if (!row) return null;
+  return {
+    id: String(row.id),
+    assetGroupId: String(row.asset_group_id),
+    type: row.type as ListingGroup["type"],
+    dimension: String(row.dimension),
+    value: String(row.value),
+    parentId: row.parent_id ? String(row.parent_id) : null,
+  };
+}
+
+export function createListingGroup(params: {
+  assetGroupId: string;
+  type: "UNIT" | "SUBDIVISION";
+  dimension: string;
+  value: string;
+  parentId?: string | null;
+}): ListingGroup {
+  const id = `lg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  getDb()
+    .prepare(
+      "INSERT INTO listing_groups (id, asset_group_id, type, dimension, value, parent_id) VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .run(id, params.assetGroupId, params.type, params.dimension, params.value, params.parentId ?? null);
+  return { id, assetGroupId: params.assetGroupId, type: params.type, dimension: params.dimension, value: params.value, parentId: params.parentId ?? null };
+}
+
+export function removeListingGroup(id: string): boolean {
+  const result = getDb().prepare("DELETE FROM listing_groups WHERE id = ?").run(id);
+  return result.changes > 0;
+}
+
 export function listProductGroups(campaignId?: string): ProductGroup[] {
   const sql = campaignId
     ? "SELECT * FROM product_groups WHERE campaign_id = ?"

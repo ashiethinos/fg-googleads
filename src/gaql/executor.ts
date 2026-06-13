@@ -10,7 +10,7 @@ import type { GaqlSearchResult } from "../models/types.js";
 import { buildFieldMask, filterRowBySelect } from "./field-mask.js";
 import { microsFromSpend, parseGaql } from "./parser.js";
 import type { ParsedGaql } from "./parser.js";
-import { segmentsFromSelect } from "./segments.js";
+import { dateRangeMultiplier, segmentsFromSelect } from "./segments.js";
 import { queryError } from "../api/google-errors.js";
 
 export type GaqlSearchResponse = {
@@ -49,40 +49,39 @@ function buildMetrics(
   };
 }
 
+function snakeToCamel(s: string): string {
+  return s.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+}
+
+/** Resolve a GAQL dotted field path (e.g. "metrics.cost_micros") to the row value. */
+function resolveField(row: GaqlSearchResult, gaqlField: string): string | number | null {
+  const dot = gaqlField.indexOf(".");
+  if (dot < 0) return null;
+  const resourceKey = snakeToCamel(gaqlField.slice(0, dot));
+  const fieldKey = snakeToCamel(gaqlField.slice(dot + 1));
+  const obj = (row as Record<string, unknown>)[resourceKey];
+  if (!obj || typeof obj !== "object") return null;
+  const val = (obj as Record<string, unknown>)[fieldKey];
+  return val === undefined ? null : (val as string | number);
+}
+
 function applyWhereNumeric(rows: GaqlSearchResult[], parsed: ParsedGaql): GaqlSearchResult[] {
   let filtered = rows;
   for (const cond of parsed.where) {
     if (cond.field === "segments.date") continue;
-    if (cond.operator === ">") {
-      if (cond.field === "metrics.impressions") {
-        filtered = filtered.filter(
-          (r) => Number((r.metrics as Record<string, unknown>)?.impressions || 0) > Number(cond.value),
-        );
+    filtered = filtered.filter((r) => {
+      const rv = resolveField(r, cond.field);
+      switch (cond.operator) {
+        case "=":   return String(rv ?? "") === String(cond.value);
+        case "!=":  return String(rv ?? "") !== String(cond.value);
+        case ">":   return Number(rv ?? 0) > Number(cond.value);
+        case "<":   return Number(rv ?? 0) < Number(cond.value);
+        case ">=":  return Number(rv ?? 0) >= Number(cond.value);
+        case "<=":  return Number(rv ?? 0) <= Number(cond.value);
+        case "IN":  return Array.isArray(cond.value) && cond.value.map(String).includes(String(rv ?? ""));
+        default:    return true;
       }
-      if (cond.field === "metrics.cost_micros") {
-        filtered = filtered.filter(
-          (r) => Number((r.metrics as Record<string, unknown>)?.costMicros || 0) > Number(cond.value),
-        );
-      }
-    }
-    if (cond.operator === "=") {
-      if (cond.field === "campaign.id") {
-        filtered = filtered.filter(
-          (r) => String((r.campaign as Record<string, unknown>)?.id) === String(cond.value),
-        );
-      }
-      if (cond.field === "asset_group.id") {
-        filtered = filtered.filter(
-          (r) => String((r.assetGroup as Record<string, unknown>)?.id) === String(cond.value),
-        );
-      }
-      if (cond.field === "campaign.status") {
-        filtered = filtered.filter((r) => (r.campaign as Record<string, string>)?.status === cond.value);
-      }
-      if (cond.field === "asset_group.status") {
-        filtered = filtered.filter((r) => (r.assetGroup as Record<string, string>)?.status === cond.value);
-      }
-    }
+    });
   }
   return filtered;
 }
@@ -92,13 +91,15 @@ function applyOrderBy(rows: GaqlSearchResult[], parsed: ParsedGaql): GaqlSearchR
   const { field, direction } = parsed.orderBy;
   const mul = direction === "DESC" ? -1 : 1;
   return [...rows].sort((a, b) => {
-    let av = 0;
-    let bv = 0;
-    if (field === "metrics.cost_micros") {
-      av = Number((a.metrics as Record<string, unknown>)?.costMicros || 0);
-      bv = Number((b.metrics as Record<string, unknown>)?.costMicros || 0);
-    }
-    return (av - bv) * mul;
+    const av = resolveField(a, field);
+    const bv = resolveField(b, field);
+    if (av === null && bv === null) return 0;
+    if (av === null) return mul;
+    if (bv === null) return -mul;
+    const an = Number(av);
+    const bn = Number(bv);
+    if (!isNaN(an) && !isNaN(bn)) return (an - bn) * mul;
+    return String(av).localeCompare(String(bv)) * mul;
   });
 }
 
@@ -191,6 +192,7 @@ function executeCustomerClientQuery(managerCustomerId: string): GaqlSearchResult
 function executeCampaignQuery(customerId: string, parsed: ParsedGaql): GaqlSearchResult[] {
   const campaigns = listCampaigns(customerId, 100_000);
   const seg = segmentsFromSelect(parsed);
+  const mult = dateRangeMultiplier(parsed.where);
 
   return campaigns.map((c) => {
     const result: GaqlSearchResult = {
@@ -201,7 +203,13 @@ function executeCampaignQuery(customerId: string, parsed: ParsedGaql): GaqlSearc
         status: c.status,
         advertisingChannelType: c.advertisingChannelType,
       },
-      metrics: buildMetrics(c.spend, c.clicks, c.impressions, c.conversions, c.conversionValue),
+      metrics: buildMetrics(
+        c.spend * mult,
+        Math.round(c.clicks * mult),
+        Math.round(c.impressions * mult),
+        c.conversions * mult,
+        c.conversionValue * mult,
+      ),
     };
     if (seg) result.segments = seg;
     return result;
@@ -213,6 +221,7 @@ function executeAssetGroupQuery(customerId: string, parsed: ParsedGaql): GaqlSea
   const campaigns = listCampaigns(customerId);
   const campaignById = new Map(campaigns.map((c) => [c.id, c]));
   const seg = segmentsFromSelect(parsed);
+  const mult = dateRangeMultiplier(parsed.where);
 
   return groups.map((ag) => {
     const campaign = campaignById.get(ag.campaignId);
@@ -231,7 +240,13 @@ function executeAssetGroupQuery(customerId: string, parsed: ParsedGaql): GaqlSea
             advertisingChannelType: campaign.advertisingChannelType,
           }
         : undefined,
-      metrics: buildMetrics(ag.spend, ag.clicks, ag.impressions, ag.conversions, ag.conversionValue),
+      metrics: buildMetrics(
+        ag.spend * mult,
+        Math.round(ag.clicks * mult),
+        Math.round(ag.impressions * mult),
+        ag.conversions * mult,
+        ag.conversionValue * mult,
+      ),
     };
     if (seg) result.segments = seg;
     return result;
@@ -241,13 +256,14 @@ function executeAssetGroupQuery(customerId: string, parsed: ParsedGaql): GaqlSea
 function executeShoppingPerformanceQuery(customerId: string, parsed: ParsedGaql): GaqlSearchResult[] {
   const rows = listShoppingPerformance(customerId, 100_000);
   const seg = segmentsFromSelect(parsed);
+  const mult = dateRangeMultiplier(parsed.where);
 
   return rows.map((r) => {
-    const spend = Number(r.spend);
-    const clicks = Number(r.clicks);
-    const impressions = Number(r.impressions);
-    const conversions = Number(r.conversions);
-    const conversionValue = Number(r.conversion_value);
+    const spend = Number(r.spend) * mult;
+    const clicks = Math.round(Number(r.clicks) * mult);
+    const impressions = Math.round(Number(r.impressions) * mult);
+    const conversions = Number(r.conversions) * mult;
+    const conversionValue = Number(r.conversion_value) * mult;
     const campaignId = String(r.camp_id || r.campaign_id || "");
 
     const segments: Record<string, string> = {};

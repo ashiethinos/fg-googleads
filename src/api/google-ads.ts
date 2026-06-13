@@ -4,8 +4,11 @@ import { executeGaqlSearch } from "../gaql/executor.js";
 import {
   createAssetGroup,
   createCampaign,
+  createListingGroup,
   getAssetGroup,
   getCampaign,
+  getListingGroup,
+  removeListingGroup,
   updateAssetGroupStatus,
   updateCampaignStatus,
   writeAuditLog,
@@ -13,6 +16,7 @@ import {
 import { googleAdsPageSize, paginateResults } from "../gaql/pagination.js";
 import { sandboxAuth } from "./middleware.js";
 import { GoogleAdsApiError, handleGoogleAdsError, mutateResourceNotFound, sendGoogleAdsFailure } from "./google-errors.js";
+import { faultInjectionMiddleware } from "./fault-injection.js";
 import { assertCustomerAccess } from "./google-ads-guard.js";
 import { GOOGLE_ADS_API_PATHS, newRequestId, normalizeCustomerId } from "./google-ads-paths.js";
 
@@ -29,6 +33,7 @@ export const googleAdsRouter = Router();
 
 googleAdsRouter.use(attachRequestId);
 googleAdsRouter.use(stripSandboxHeaders);
+googleAdsRouter.use(faultInjectionMiddleware);
 
 googleAdsRouter.post(RE_SEARCH, sandboxAuth, handleSearch);
 googleAdsRouter.post(RE_SEARCH_STREAM, sandboxAuth, handleSearchStream);
@@ -268,6 +273,10 @@ function validateMutateOperation(customerId: string, op: MutateOperation): void 
     validateAssetGroupOperation(customerId, op.assetGroupOperation as Record<string, unknown>);
     return;
   }
+  if (op.assetGroupListingGroupFilterOperation) {
+    validateListingGroupFilterOperation(customerId, op.assetGroupListingGroupFilterOperation as Record<string, unknown>);
+    return;
+  }
   throw new GoogleAdsApiError("INVALID_ARGUMENT", "Request contains an invalid argument.", [
     {
       errorCode: { mutateError: "OPERATION_NOT_SUPPORTED_FOR_CONTEXT" },
@@ -305,7 +314,81 @@ function validateAssetGroupOperation(customerId: string, operation: Record<strin
 function applyMutateOperation(customerId: string, op: MutateOperation, user: string): Record<string, unknown> {
   if (op.campaignOperation) return applyCampaignOperation(customerId, op.campaignOperation as Record<string, unknown>, user);
   if (op.assetGroupOperation) return applyAssetGroupOperation(customerId, op.assetGroupOperation as Record<string, unknown>, user);
+  if (op.assetGroupListingGroupFilterOperation) return applyListingGroupFilterOperation(customerId, op.assetGroupListingGroupFilterOperation as Record<string, unknown>, user);
   throw new Error("unsupported");
+}
+
+function validateListingGroupFilterOperation(_customerId: string, operation: Record<string, unknown>): void {
+  if (operation.create) {
+    const create = operation.create as Record<string, unknown>;
+    const assetGroupResource = String(create.assetGroup || "");
+    const assetGroupId = assetGroupResource.split("/").pop() || "";
+    if (!getAssetGroup(assetGroupId)) throw mutateResourceNotFound("assetGroup", assetGroupId);
+    return;
+  }
+  if (operation.remove) {
+    const resourceName = String(operation.remove);
+    const id = resourceName.split("/").pop() || "";
+    if (!getListingGroup(id)) throw mutateResourceNotFound("assetGroupListingGroupFilter", id);
+    return;
+  }
+  throw new GoogleAdsApiError("INVALID_ARGUMENT", "Request contains an invalid argument.", [
+    { errorCode: { mutateError: "OPERATION_NOT_SUPPORTED_FOR_CONTEXT" }, message: "assetGroupListingGroupFilterOperation requires create or remove" },
+  ]);
+}
+
+function applyListingGroupFilterOperation(
+  customerId: string,
+  operation: Record<string, unknown>,
+  user: string,
+): Record<string, unknown> {
+  if (operation.create) {
+    const create = operation.create as Record<string, unknown>;
+    const assetGroupResource = String(create.assetGroup || "");
+    const assetGroupId = assetGroupResource.split("/").pop() || "";
+    const caseValue = create.caseValue as Record<string, unknown> | undefined;
+    const productType = (caseValue?.productType as Record<string, unknown> | undefined) ?? {};
+    const dimension = String(productType.level || "ALL_PRODUCTS");
+    const value = String(productType.value || "");
+    const parentResource = String(create.parentListingGroupFilter || "");
+    const parentId = parentResource.split("/").pop() || null;
+    const type = (create.type as "UNIT" | "SUBDIVISION") || "UNIT";
+
+    const lg = createListingGroup({ assetGroupId, type, dimension, value, parentId: parentId || null });
+    writeAuditLog({
+      action: "create_listing_group_filter",
+      user,
+      resourceType: "asset_group_listing_group_filter",
+      resourceId: lg.id,
+      previousState: "{}",
+      newState: JSON.stringify(lg),
+    });
+    return {
+      assetGroupListingGroupFilterResult: {
+        resourceName: `customers/${customerId}/assetGroupListingGroupFilters/${lg.id}`,
+      },
+    };
+  }
+
+  if (operation.remove) {
+    const resourceName = String(operation.remove);
+    const id = resourceName.split("/").pop() || "";
+    const existing = getListingGroup(id)!;
+    removeListingGroup(id);
+    writeAuditLog({
+      action: "remove_listing_group_filter",
+      user,
+      resourceType: "asset_group_listing_group_filter",
+      resourceId: id,
+      previousState: JSON.stringify(existing),
+      newState: "{}",
+    });
+    return { assetGroupListingGroupFilterResult: { resourceName } };
+  }
+
+  throw new GoogleAdsApiError("INVALID_ARGUMENT", "Request contains an invalid argument.", [
+    { errorCode: { mutateError: "OPERATION_NOT_SUPPORTED_FOR_CONTEXT" }, message: "Unsupported assetGroupListingGroupFilter operation" },
+  ]);
 }
 
 function applyCampaignOperation(

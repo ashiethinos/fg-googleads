@@ -55,23 +55,33 @@ function parseWhereClause(whereStr: string): GaqlCondition[] {
   const parts = whereStr.split(/\s+AND\s+/i);
 
   for (const part of parts) {
-    const duringMatch = part.match(/segments\.date\s+DURING\s+(\w+)/i);
+    const trimmed = part.trim();
+
+    const duringMatch = trimmed.match(/^([\w.]+)\s+DURING\s+(\w+)/i);
     if (duringMatch) {
-      conditions.push({ field: "segments.date", operator: "DURING", value: duringMatch[1] });
+      conditions.push({ field: "segments.date", operator: "DURING", value: duringMatch[2] });
       continue;
     }
 
-    const gtMatch = part.match(/([\w.]+)\s*>\s*(\d+)/i);
-    if (gtMatch) {
-      conditions.push({ field: normalizeField(gtMatch[1]), operator: ">", value: Number(gtMatch[2]) });
+    // IN ('a', 'b', ...) or IN (1, 2, ...)
+    const inMatch = trimmed.match(/^([\w.]+)\s+IN\s*\(([^)]+)\)/i);
+    if (inMatch) {
+      const values = inMatch[2]
+        .split(",")
+        .map((v) => v.trim().replace(/^["']|["']$/g, ""));
+      conditions.push({ field: normalizeField(inMatch[1]), operator: "IN", value: values });
       continue;
     }
 
-    const eqMatch = part.match(/([\w.]+)\s*=\s*(\d+|"[^"]*"|'[^']*'|\w+)/i);
-    if (eqMatch) {
-      let value: string | number = eqMatch[2].replace(/^["']|["']$/g, "");
-      if (/^\d+$/.test(value)) value = Number(value);
-      conditions.push({ field: normalizeField(eqMatch[1]), operator: "=", value });
+    // All comparison operators — <=, >=, != must come before <, >, =
+    const cmpMatch = trimmed.match(
+      /^([\w.]+)\s*(<=|>=|!=|<|>|=)\s*(\d+(?:\.\d+)?|"[^"]*"|'[^']*'|\w+)/i,
+    );
+    if (cmpMatch) {
+      const op = cmpMatch[2] as GaqlCondition["operator"];
+      let value: string | number = cmpMatch[3].replace(/^["']|["']$/g, "");
+      if (/^\d+(?:\.\d+)?$/.test(String(value))) value = Number(value);
+      conditions.push({ field: normalizeField(cmpMatch[1]), operator: op, value });
     }
   }
 

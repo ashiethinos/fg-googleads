@@ -1,5 +1,6 @@
 import { config } from "../config.js";
 import { closeDb, getDb, isSeeded, resetDatabase } from "../db/store.js";
+import { sandboxProductImageUrl } from "../lib/product-images.js";
 
 const PRODUCT_CATEGORY = "Clothing and Apparel";
 
@@ -341,7 +342,7 @@ export async function seedDatabase(force = false): Promise<void> {
         price,
         salePrice,
         currency,
-        `https://sandbox.feedgraph.local/images/${id}.jpg`,
+        sandboxProductImageUrl(id, 400),
         `https://sandbox.feedgraph.local/products/${itemId}`,
         invScenario.count,
         availability,

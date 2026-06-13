@@ -1,8 +1,14 @@
 /**
- * FeedGraph Google Ads Sandbox Connector
+ * FeedGraph Google Ads Sandbox Connector — CANONICAL CONTRACT
  *
- * Drop-in configuration for switching FeedGraph between LIVE and SANDBOX modes
- * without changing application logic.
+ * Single source of truth for the live↔sandbox switch shared by both repos.
+ * FeedGraph's runtime implementation lives at
+ * `feedgraph/server/google-ads-sandbox-connector.ts` and MUST stay aligned with
+ * the env-var names and defaults declared here (same vars, same defaults — most
+ * importantly `liveApiVersion`/`apiVersion` default `v24`).
+ *
+ * Do not fork this into a hand-maintained copy; if the contract changes, update
+ * this file and FeedGraph's connector together.
  */
 
 export type GoogleAdsEnvironment = "live" | "sandbox";
@@ -33,7 +39,7 @@ export function loadConnectorConfigFromEnv(): SandboxConnectorConfig {
     sandboxDeveloperToken: process.env.SANDBOX_DEVELOPER_TOKEN || process.env.GOOGLE_ADS_DEVELOPER_TOKEN || "sandbox-dev-token",
     sandboxAccessToken: process.env.SANDBOX_ACCESS_TOKEN || "sandbox-access-token",
     sandboxCustomerId: (process.env.SANDBOX_CUSTOMER_ID || "1234567890").replace(/\D/g, ""),
-    liveApiVersion: (process.env.GOOGLE_ADS_API_VERSION || "v20").toLowerCase(),
+    liveApiVersion: (process.env.GOOGLE_ADS_API_VERSION || "v24").toLowerCase(),
   };
 }
 

@@ -11,6 +11,7 @@ import {
   listProducts,
   listProductVariants,
 } from "../db/store.js";
+import { sandboxProductImageUrl } from "../lib/product-images.js";
 
 export const uiApiRouter = Router();
 
@@ -22,12 +23,19 @@ function money(n: number, currency: string): string {
   }
 }
 
+function resolveProductImageLink(p: ReturnType<typeof listProducts>[0]): string {
+  const link = (p.imageLink || "").trim();
+  if (link && !link.includes("sandbox.feedgraph.local")) return link;
+  return sandboxProductImageUrl(p.id, 80);
+}
+
 function productRow(p: ReturnType<typeof listProducts>[0], currency: string) {
   const roas = p.spend > 0 ? p.conversionValue / p.spend : 0;
   return {
     productId: p.id,
     itemId: p.itemId,
     title: p.title,
+    imageLink: resolveProductImageLink(p),
     category: p.category,
     status: p.status,
     campaignId: p.campaignId,
