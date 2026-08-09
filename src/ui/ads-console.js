@@ -62,7 +62,7 @@ function productThumb(p, size = 40) {
   if (!url) {
     return `<div class="gads-product-thumb gads-product-thumb--empty" style="width:${size}px;height:${size}px"></div>`;
   }
-  return `<img class="gads-product-thumb" src="${esc(url)}" alt="" width="${size}" height="${size}" loading="lazy" />`;
+  return `<img class="gads-product-thumb" src="${esc(url)}" alt="" width="${size}" height="${size}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'gads-product-thumb gads-product-thumb--empty',style:'width:${size}px;height:${size}px'}))" />`;
 }
 
 function productTable(rows) {

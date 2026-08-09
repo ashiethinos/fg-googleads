@@ -342,7 +342,7 @@ export async function seedDatabase(force = false): Promise<void> {
         price,
         salePrice,
         currency,
-        sandboxProductImageUrl(id, 400),
+        sandboxProductImageUrl({ id, subcategory, title }, 400),
         `https://sandbox.feedgraph.local/products/${itemId}`,
         invScenario.count,
         availability,

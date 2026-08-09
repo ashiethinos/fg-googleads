@@ -6,6 +6,11 @@ import { GOOGLE_ADS_API_PATHS, GOOGLE_ADS_DOC_LINKS } from "./google-ads-paths.j
 import { clearFaultMode, getFaultMode, setFaultMode, type FaultMode } from "./fault-injection.js";
 import { uiApiRouter } from "./ui-api.js";
 import {
+  catalogImageSvgPlaceholder,
+  getCatalogImageUpstreamUrls,
+  resolveProductSubcategory,
+} from "../lib/product-images.js";
+import {
   applyCustomLabel,
   applyProductLabel,
   createAssetGroup,
@@ -41,6 +46,39 @@ devRouter.use("/ui/api", uiApiRouter);
 devRouter.use("/ui", express.static(uiDir));
 devRouter.get("/ui", (_req, res) => {
   res.sendFile(path.join(uiDir, "index.html"));
+});
+
+/** Proxies verified apparel photos; SVG placeholder if upstream is unavailable. */
+devRouter.get("/catalog-image", async (req: Request, res: Response) => {
+  const id = typeof req.query.id === "string" ? req.query.id : "prod-0";
+  const title = typeof req.query.title === "string" ? req.query.title : undefined;
+  const subcategoryParam = typeof req.query.subcategory === "string" ? req.query.subcategory : undefined;
+  const size = Math.max(40, Math.min(800, Number(req.query.size) || 80));
+  const input = { id, title, subcategory: subcategoryParam };
+  const subcategory = resolveProductSubcategory(input);
+  const upstreams = getCatalogImageUpstreamUrls(input, size);
+
+  for (const upstream of upstreams) {
+    try {
+      const upstreamRes = await fetch(upstream, {
+        headers: { Accept: "image/*" },
+        signal: AbortSignal.timeout(upstream.includes("loremflickr.com") ? 4_000 : 10_000),
+      });
+      if (!upstreamRes.ok) continue;
+      const contentType = upstreamRes.headers.get("content-type") || "image/jpeg";
+      if (!contentType.includes("image")) continue;
+      const body = Buffer.from(await upstreamRes.arrayBuffer());
+      res.set("Content-Type", contentType);
+      res.set("Cache-Control", "public, max-age=86400, immutable");
+      return res.send(body);
+    } catch {
+      /* try next upstream */
+    }
+  }
+
+  res.set("Content-Type", "image/svg+xml; charset=utf-8");
+  res.set("Cache-Control", "public, max-age=3600");
+  return res.send(catalogImageSvgPlaceholder(subcategory, size));
 });
 
 devRouter.get("/", (req, res) => {

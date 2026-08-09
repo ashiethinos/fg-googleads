@@ -148,7 +148,7 @@ These paths are on the server root, same as `googleads.googleapis.com`. Any othe
 |--------|------|-------------|
 | POST | `/v24/customers/{id}/googleAds:search` | GAQL search (paginated, 10k rows/page) |
 | POST | `/v24/customers/{id}/googleAds:searchStream` | GAQL search stream (all results in one response) |
-| POST | `/v24/customers/{id}/googleAds:mutate` | Campaign/asset group create and status updates |
+| POST | `/v24/customers/{id}/googleAds:mutate` | Campaign/asset group create and status updates, listing group filter create/remove |
 | GET | `/v24/customers:listAccessibleCustomers` | List sandbox account |
 
 Compatible with Google Ads API v20–v24 path structure. Default version: **v24** ([API reference](https://developers.google.com/google-ads/api/reference/rpc/v24/overview)).
@@ -161,6 +161,8 @@ Compatible with Google Ads API v20–v24 path structure. Default version: **v24*
 | `CustomerService.ListAccessibleCustomers` | `GET /{v}/customers:listAccessibleCustomers` | — | `resourceNames` |
 | `CampaignService.Mutate` | `POST /{v}/customers/{id}/campaigns:mutate` | `operations` | `results` |
 | `AssetGroupService.Mutate` | `POST /{v}/customers/{id}/assetGroups:mutate` | `operations` | `results` |
+
+`googleAds:mutate` accepts `campaignOperation`, `assetGroupOperation`, and `assetGroupListingGroupFilterOperation` entries in `mutateOperations`. Listing group filter operations support `create` (with `assetGroup`, `type` = `UNIT`/`SUBDIVISION`, `parentListingGroupFilter`, and a `caseValue.productType` dimension) and `remove` (by resource name); each returns an `assetGroupListingGroupFilterResult` and writes an audit log entry. Any other operation type returns `OPERATION_NOT_SUPPORTED_FOR_CONTEXT`.
 
 All responses include a `request-id` header. Errors use the `GoogleAdsFailure` format with `details` and `requestId`.
 
@@ -175,6 +177,10 @@ Mounted at `/_dev` when `SANDBOX_DEV_ROUTES` is enabled (default). Use these for
 | GET | `/_dev/info` | Sandbox metadata, connector config, implemented endpoints |
 | GET | `/_dev/health` | Health check |
 | GET | `/_dev/stats` | Row counts (products, campaigns, asset groups, audit logs) |
+| GET | `/_dev/catalog-image` | Product image proxy (`?id=`, `?title=`, `?subcategory=`, `?size=` 40–800, default 80) — serves a verified apparel photo, or an SVG placeholder if upstream is unavailable |
+| GET | `/_dev/fault-injection` | Current fault mode + available modes |
+| POST | `/_dev/fault-injection` | Activate a fault mode (`{ mode }`) |
+| DELETE | `/_dev/fault-injection` | Clear fault injection (back to `none`) |
 | GET | `/_dev/campaigns` | List campaigns with metrics |
 | GET | `/_dev/asset-groups` | List asset groups |
 | GET | `/_dev/listing-groups` | List listing groups (`?assetGroupId=`) |
@@ -198,6 +204,27 @@ Mounted at `/_dev` when `SANDBOX_DEV_ROUTES` is enabled (default). Use these for
 | POST | `/_dev/products/:id/labels` | Apply label |
 | DELETE | `/_dev/products/:id/labels/:labelId` | Remove label |
 | POST | `/_dev/products/:id/custom-labels` | Apply custom label slot |
+
+### Fault injection — test FeedGraph error handling
+
+While a fault mode is active, **every** Google Ads API request (search, searchStream, mutate, listAccessibleCustomers) is short-circuited with the corresponding production-shaped `GoogleAdsFailure` error. `/_dev` routes keep working so you can turn it off again. The mode is in-memory only — it resets to `none` on server restart.
+
+```bash
+curl -X POST http://localhost:4789/_dev/fault-injection \
+  -H "Content-Type: application/json" -d '{"mode":"auth_failure"}'
+curl http://localhost:4789/_dev/fault-injection          # { active, available, description }
+curl -X DELETE http://localhost:4789/_dev/fault-injection # clear (same as {"mode":"none"})
+```
+
+| Mode | Response | Error code |
+|------|----------|------------|
+| `auth_failure` | `UNAUTHENTICATED` — invalid/expired OAuth token | `authenticationError: OAUTH_TOKEN_INVALID` |
+| `quota_exceeded` | `RESOURCE_EXHAUSTED` — quota exceeded, retry after 60s | `quotaError: RESOURCE_EXHAUSTED` |
+| `rate_limit` | `RESOURCE_EXHAUSTED` — too many requests/sec, back off | `quotaError: RESOURCE_TEMPORARILY_EXHAUSTED` |
+| `internal_error` | `INTERNAL` — transient backend error, retryable | `internalError: INTERNAL_ERROR` |
+| `none` | Normal operation (default) | — |
+
+Unknown modes are rejected with `400` and the list of valid modes.
 
 ## Test Scenarios (Built-in)
 
